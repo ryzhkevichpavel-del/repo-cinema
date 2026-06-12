@@ -6,8 +6,8 @@
 2. Repository → **Settings → Pages → Build and deployment** →
    Source: *Deploy from a branch* → Branch: `main`, folder: `/ (root)`.
 3. Wait ~1 minute. Your theater is live at
-   `https://<you>.github.io/repo-cinema/`.
-4. Smoke test: open `?repo=facebook/react` — the film must autoplay.
+   `https://ryzhkevichpavel-del.github.io/repo-cinema/`.
+4. Smoke test: open `https://ryzhkevichpavel-del.github.io/repo-cinema/?repo=facebook/react` — the film must autoplay.
 5. Record a 15–20 s screen capture of the react demo, save as `docs/demo.gif`,
    and take a poster screenshot for `og.png` (replace the bundled one if you like).
 
@@ -89,7 +89,7 @@
 >
 > No backend. No build. Just canvas.
 >
-> Watch react's film: <link>?repo=facebook/react
+> Watch react's film: https://ryzhkevichpavel-del.github.io/repo-cinema/?repo=facebook/react
 
 **Thread idea (one poster per tweet):**
 1. Launch post above.
