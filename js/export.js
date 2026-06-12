@@ -138,7 +138,9 @@ const RC_EXPORT = (() => {
   function recordMovie(cinema, movie, onDone, onError) {
     const mime = pickMime();
     if (!mime) {
-      onError(new Error('Video recording is not supported in this browser.'));
+      onError(new Error(typeof RC_I18N !== 'undefined'
+        ? RC_I18N.t('err_norecord')
+        : 'Video recording is not supported in this browser.'));
       return null;
     }
     const stream = cinema.canvas.captureStream(30);

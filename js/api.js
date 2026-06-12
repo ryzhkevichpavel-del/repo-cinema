@@ -43,7 +43,11 @@ const RC_API = (() => {
   }
 
   class ApiError extends Error {
-    constructor(message, kind) { super(message); this.kind = kind || 'generic'; }
+    constructor(message, kind, data) {
+      super(message);
+      this.kind = kind || 'generic';
+      this.data = data || null;
+    }
   }
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -53,7 +57,7 @@ const RC_API = (() => {
     for (let i = 0; i < attempts; i++) {
       const res = await fetch(API + path, { headers: headers() });
       if (res.status === 202) {
-        if (onStatus) onStatus('Projecting… GitHub is preparing the reels');
+        if (onStatus) onStatus('projecting');
         await sleep(STATS_RETRY_MS);
         continue;
       }
@@ -68,7 +72,7 @@ const RC_API = (() => {
           throw new ApiError(
             'GitHub API rate limit reached. It resets at ' + when +
             '. Meanwhile: add a token (raises the limit to 5,000/h) or watch a demo below.',
-            'ratelimit');
+            'ratelimit', { when });
         }
         throw new ApiError('GitHub said 403 Forbidden. If you entered a token, check it is valid.', 'forbidden');
       }
@@ -101,25 +105,25 @@ const RC_API = (() => {
   async function fetchRepoBundle(owner, repo, onStatus) {
     const cached = cacheGet(owner, repo);
     if (cached) {
-      if (onStatus) onStatus('Rewinding the reels… (cached)');
+      if (onStatus) onStatus('cached');
       return cached;
     }
 
-    if (onStatus) onStatus('Reading the script…');
+    if (onStatus) onStatus('reading');
     const meta = await gh(`/repos/${owner}/${repo}`, onStatus, false);
 
     const age = Math.max(1, Math.round(
       (Date.now() - new Date(meta.created_at)) / (365.25 * 24 * 3600 * 1000)));
-    if (onStatus) onStatus(`Reading ${age} year${age > 1 ? 's' : ''} of history…`);
+    if (onStatus) onStatus('history', age);
     const contributors = await gh(`/repos/${owner}/${repo}/stats/contributors`, onStatus, true);
     if (!Array.isArray(contributors) || contributors.length === 0) {
       throw new ApiError('This repository has no commit history yet — nothing to film.', 'empty');
     }
 
-    if (onStatus) onStatus(`Casting ${contributors.length} contributor${contributors.length > 1 ? 's' : ''}…`);
+    if (onStatus) onStatus('casting', contributors.length);
     const languages = await gh(`/repos/${owner}/${repo}/languages`, onStatus, false);
 
-    if (onStatus) onStatus('Rolling the end credits…');
+    if (onStatus) onStatus('credits');
     let commits = [];
     try {
       commits = await gh(`/repos/${owner}/${repo}/commits?per_page=100`, onStatus, false);

@@ -16,6 +16,7 @@
 
 <!-- ============ START SCREEN ============ -->
 <div id="start-screen">
+  <button id="lang-toggle" title="Switch language">RU</button>
   <div class="start-inner">
     <h1 class="logo">🎬 REPO CINEMA</h1>
     <p class="tagline">Every repo deserves a premiere.</p>
@@ -43,7 +44,7 @@
 
     <div id="error-box" class="hidden"></div>
   </div>
-  <footer class="start-footer">no backend · no build · no tracking · <a href="https://github.com" target="_blank" rel="noopener">MIT</a></footer>
+  <footer class="start-footer"><span id="footer-text">no backend · no build · no tracking · </span><a href="https://github.com" target="_blank" rel="noopener">MIT</a></footer>
 </div>
 
 <!-- ============ LOADING SCREEN ============ -->
@@ -70,6 +71,7 @@
   </div>
 </div>
 
+<script src="js/i18n.js"></script>
 <script src="js/api.js"></script>
 <script src="js/timeline.js"></script>
 <script src="js/cinema.js"></script>

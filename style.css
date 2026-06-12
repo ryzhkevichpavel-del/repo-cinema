@@ -40,6 +40,21 @@ html, body {
 
 .start-inner { max-width: 640px; width: 100%; padding: 0 24px; }
 
+#lang-toggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 7px 14px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(139,148,158,0.4);
+  border-radius: 6px;
+  cursor: pointer;
+}
+#lang-toggle:hover { color: var(--gold); border-color: var(--gold); }
+
 .logo {
   font-size: clamp(2rem, 6vw, 3.4rem);
   letter-spacing: 0.18em;

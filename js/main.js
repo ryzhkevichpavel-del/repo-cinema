@@ -63,32 +63,32 @@
   async function premiere(input) {
     const parsed = RC_API.parseRepoInput(input);
     if (!parsed) {
-      showError('That does not look like a GitHub repository. Try "owner/repo" or a full github.com URL.');
+      showError(RC_I18N.t('err_badinput'));
       return;
     }
     errorBox.classList.add('hidden');
     show(loadingScreen);
-    loadingText.textContent = 'Reading the script…';
+    loadingText.textContent = RC_I18N.statusText('reading');
     try {
       const bundle = await RC_API.fetchRepoBundle(parsed.owner, parsed.repo,
-        (msg) => { loadingText.textContent = msg; });
+        (key, arg) => { loadingText.textContent = RC_I18N.statusText(key, arg); });
       const movie = RC_TIMELINE.buildMovie(bundle);
       startMovie(movie, bundle.meta.full_name);
     } catch (e) {
-      showError(e && e.message ? e.message : 'Something went wrong. The projector jammed.');
+      showError(RC_I18N.errorText(e));
     }
   }
 
   async function premiereDemo(name) {
     errorBox.classList.add('hidden');
     show(loadingScreen);
-    loadingText.textContent = 'Rewinding the demo reel…';
+    loadingText.textContent = RC_I18N.statusText('demo');
     try {
       const bundle = await RC_API.fetchDemo(name);
       const movie = RC_TIMELINE.buildMovie(bundle);
       startMovie(movie, bundle.meta.full_name);
     } catch (e) {
-      showError('Could not load the demo: ' + (e && e.message ? e.message : e));
+      showError(RC_I18N.t('err_demo') + (e && e.message ? e.message : e));
     }
   }
 
@@ -107,6 +107,11 @@
   const tokenInput = $('token-input');
   tokenInput.value = RC_API.getToken();
   tokenInput.addEventListener('change', () => RC_API.setToken(tokenInput.value));
+
+  RC_I18N.apply();
+  $('lang-toggle').addEventListener('click', () => {
+    RC_I18N.setLang(RC_I18N.getLang() === 'ru' ? 'en' : 'ru');
+  });
 
   /* ---------- cinema controls ---------- */
 
@@ -139,35 +144,32 @@
       }
       await RC_EXPORT.downloadPoster(currentMovie, frame);
     } catch (e) {
-      alert('Poster export failed: ' + e.message);
+      alert(RC_I18N.t('err_poster') + e.message);
     }
   });
 
   const btnRecord = $('btn-record');
   btnRecord.addEventListener('click', () => {
     if (!currentMovie) return;
-    if (recorder) { // stop early
-      recorder.stop();
+    const resetRecordBtn = () => {
       recorder = null;
       btnRecord.classList.remove('recording');
-      btnRecord.textContent = '⏺ Record';
+      btnRecord.textContent = RC_I18N.t('record');
+    };
+    if (recorder) { // stop early
+      recorder.stop();
+      resetRecordBtn();
       return;
     }
     recorder = RC_EXPORT.recordMovie(cinema, currentMovie,
-      () => {
-        recorder = null;
-        btnRecord.classList.remove('recording');
-        btnRecord.textContent = '⏺ Record';
-      },
+      () => resetRecordBtn(),
       (err) => {
-        recorder = null;
-        btnRecord.classList.remove('recording');
-        btnRecord.textContent = '⏺ Record';
-        alert('Recording failed: ' + err.message);
+        resetRecordBtn();
+        alert(RC_I18N.t('err_record') + err.message);
       });
     if (recorder) {
       btnRecord.classList.add('recording');
-      btnRecord.textContent = '⏹ Stop';
+      btnRecord.textContent = RC_I18N.t('stop');
       syncPauseBtn();
     }
   });
@@ -176,8 +178,8 @@
   btnCopy.addEventListener('click', async () => {
     if (!currentMovie) return;
     const ok = await RC_EXPORT.copyShareLink(currentMovie.meta.fullName);
-    btnCopy.textContent = ok ? '✓ Copied!' : '✗ Copy failed';
-    setTimeout(() => { btnCopy.textContent = '🔗 Copy link'; }, 1800);
+    btnCopy.textContent = RC_I18N.t(ok ? 'copied' : 'copyfail');
+    setTimeout(() => { btnCopy.textContent = RC_I18N.t('copylink'); }, 1800);
   });
 
   $('btn-back').addEventListener('click', () => {

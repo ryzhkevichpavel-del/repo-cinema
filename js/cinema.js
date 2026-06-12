@@ -369,9 +369,11 @@ const RC_CINEMA = (() => {
       ctx.fillStyle = vg;
       ctx.fillRect(0, 0, W, H);
 
-      // film grain
+      // film grain — doubles as noise dithering: breaks up banding in the
+      // dark radial gradients (star halo, vignette) far cheaper than
+      // per-pixel ordered dithering would
       refreshGrain();
-      ctx.globalAlpha = 0.04;
+      ctx.globalAlpha = 0.055;
       ctx.drawImage(grainCanvas, 0, 0, W, H);
       ctx.globalAlpha = 1;
     }
@@ -399,8 +401,10 @@ const RC_CINEMA = (() => {
         ctx.stroke();
       }
 
-      // star (the repo) — pulses with weekly commits
-      const baseR = 34;
+      // star (the repo) — born tiny, grows with accumulated commits,
+      // and pulses with the current week's activity
+      const grow = Math.sqrt(clamp(this.hud.commits / Math.max(1, m.totals.commits), 0, 1));
+      const baseR = lerp(9, 36, grow);
       const pulse = baseR + act * 26 + Math.sin(this.t * 3) * 2.5;
       const colors = m.meta.langColors;
       const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, pulse * 2.4);
