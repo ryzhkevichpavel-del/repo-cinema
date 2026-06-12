@@ -12,12 +12,9 @@ bursts of activity, and a closing poster you'll actually want to share.
 
 ![Repo Cinema demo](docs/demo.gif)
 
-*(placeholder — record a short screen capture of the `react` demo playing and
-save it as `docs/demo.gif`)*
-
 ## 🍿 Try it live
 
-**https://&lt;your-user&gt;.github.io/repo-cinema/?repo=facebook/react**
+**https://ryzhkevichpavel-del.github.io/repo-cinema/?repo=facebook/react**
 
 Or click one of the built-in demos (`react`, `linux`, `vscode`) — they play
 instantly from bundled snapshots, no API calls, no rate limit spent.
