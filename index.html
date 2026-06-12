@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Repo Cinema — every repo deserves a premiere</title>
+<meta name="description" content="Turn any public GitHub repository into a cinematic animated movie of its history. No backend, no build, no tracking.">
+<meta property="og:title" content="Repo Cinema">
+<meta property="og:description" content="Every repo deserves a premiere. Turn any GitHub repo into a movie.">
+<meta property="og:image" content="og.png">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+</head>
+<body>
+
+<!-- ============ START SCREEN ============ -->
+<div id="start-screen">
+  <div class="start-inner">
+    <h1 class="logo">🎬 REPO CINEMA</h1>
+    <p class="tagline">Every repo deserves a premiere.</p>
+
+    <form id="repo-form" autocomplete="off">
+      <input id="repo-input" type="text" spellcheck="false"
+             placeholder="github.com/owner/repo or owner/repo">
+      <button id="premiere-btn" type="submit">Premiere ▶</button>
+    </form>
+
+    <div class="demo-row">
+      <span class="demo-label">Now showing:</span>
+      <button class="demo-btn" data-demo="react">react</button>
+      <button class="demo-btn" data-demo="linux">linux</button>
+      <button class="demo-btn" data-demo="vscode">vscode</button>
+    </div>
+
+    <details class="token-row">
+      <summary>Have a token? Raise your limit</summary>
+      <p class="token-note">A GitHub personal access token raises the API limit
+        from 60 to 5,000 requests/hour. It is stored only in your browser's
+        localStorage and sent only to api.github.com. No scopes needed for public repos.</p>
+      <input id="token-input" type="password" placeholder="ghp_…">
+    </details>
+
+    <div id="error-box" class="hidden"></div>
+  </div>
+  <footer class="start-footer">no backend · no build · no tracking · <a href="https://github.com" target="_blank" rel="noopener">MIT</a></footer>
+</div>
+
+<!-- ============ LOADING SCREEN ============ -->
+<div id="loading-screen" class="hidden">
+  <div class="loading-inner">
+    <div class="projector">🎞</div>
+    <p id="loading-text">Reading the script…</p>
+  </div>
+</div>
+
+<!-- ============ CINEMA SCREEN ============ -->
+<div id="cinema-screen" class="hidden">
+  <div id="canvas-wrap">
+    <canvas id="scene"></canvas>
+  </div>
+  <div id="controls">
+    <button id="btn-replay" title="Replay">🎬 Replay</button>
+    <button id="btn-pause" title="Pause / play (Space)">⏸</button>
+    <button id="btn-speed" title="Playback speed">×1</button>
+    <button id="btn-poster" title="Download poster PNG">🖼 Poster</button>
+    <button id="btn-record" title="Record the movie as video">⏺ Record</button>
+    <button id="btn-copylink" title="Copy a shareable link">🔗 Copy link</button>
+    <button id="btn-back" title="Back to start">← New film</button>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/cinema.js"></script>
+<script src="js/export.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
