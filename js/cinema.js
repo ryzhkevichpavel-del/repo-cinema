@@ -20,6 +20,8 @@ const RC_CINEMA = (() => {
   const TAU = Math.PI * 2;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const lerp = (a, b, t) => a + (b - a) * t;
+  const easeOut = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+  const ORBIT_FADE_SEC = 1.1;
   const fmt = (n) => typeof RC_I18N !== 'undefined'
     ? RC_I18N.fmt(n)
     : Math.round(n || 0).toLocaleString('en-US');
@@ -63,7 +65,11 @@ const RC_CINEMA = (() => {
   function makePool() {
     const pool = [];
     for (let i = 0; i < MAX_PARTICLES; i++) {
-      pool.push({ alive: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, kind: 0, size: 1 });
+      pool.push({
+        alive: false, x: 0, y: 0, px: 0, py: 0,
+        vx: 0, vy: 0, life: 0, maxLife: 1,
+        kind: 0, size: 1, power: 1
+      });
     }
     return pool;
   }
@@ -110,6 +116,8 @@ const RC_CINEMA = (() => {
       this.phase = 'intro';
       this.hud = { commits: 0, additions: 0, deletions: 0, contributors: 0 };
       this.seenAuthors = new Set();
+      this.authorAppearedAt = new Map();
+      this.impacts = [];
       this.activeMilestone = null;
       this.milestoneShownAt = -99;
       this.shownMilestones = new Set();
@@ -167,7 +175,12 @@ const RC_CINEMA = (() => {
       for (let i = 0; i <= Math.min(wInt, m.weeks.length - 1); i++) {
         const wk = m.weeks[i];
         h.commits += wk.totalCommits; h.additions += wk.additions; h.deletions += wk.deletions;
-        for (const login of wk.perAuthor.keys()) seen.add(login);
+        for (const login of wk.perAuthor.keys()) {
+          if (!seen.has(login)) {
+            seen.add(login);
+            this.authorAppearedAt.set(login, this.t - ORBIT_FADE_SEC);
+          }
+        }
       }
       this.hud = { commits: h.commits, additions: h.additions, deletions: h.deletions };
       this.seenAuthors = seen;
@@ -175,6 +188,7 @@ const RC_CINEMA = (() => {
       this.activeMilestone = null;
       this._lastWeekEmitted = wInt;
       for (const p of this.pool) p.alive = false;
+      this.impacts = [];
       if (!this.playing) this._draw();
     }
 
@@ -235,7 +249,12 @@ const RC_CINEMA = (() => {
           this.hud.commits += wk.totalCommits;
           this.hud.additions += wk.additions;
           this.hud.deletions += wk.deletions;
-          for (const login of wk.perAuthor.keys()) this.seenAuthors.add(login);
+          for (const login of wk.perAuthor.keys()) {
+            if (!this.seenAuthors.has(login)) {
+              this.seenAuthors.add(login);
+              this.authorAppearedAt.set(login, this.t);
+            }
+          }
           this._emitWeek(wk);
           // milestone?
           const ms = m.milestones.find(x => x.weekIdx === this._lastWeekEmitted);
@@ -282,12 +301,20 @@ const RC_CINEMA = (() => {
         if (!p.alive) continue;
         p.life += dt;
         if (p.life >= p.maxLife) { p.alive = false; continue; }
+        p.px = p.x;
+        p.py = p.y;
         if (p.kind === 0) { // addition spark — flies toward the star
           const dx = cx - p.x, dy = cy - p.y;
           const d = Math.hypot(dx, dy) || 1;
-          p.vx += (dx / d) * 260 * dt;
-          p.vy += (dy / d) * 260 * dt;
-          if (d < 30) p.alive = false;
+          p.vx += (dx / d) * 300 * dt;
+          p.vy += (dy / d) * 300 * dt;
+          if (d < this._starCoreRadius() + 10) {
+            const ang = Math.atan2(p.y - cy, p.x - cx);
+            const r = this._starCoreRadius() + 3;
+            this._impact(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r, p.power, ang);
+            p.alive = false;
+            continue;
+          }
         } else {            // deletion ember — drifts away and dies
           p.vx *= (1 - 0.6 * dt);
           p.vy *= (1 - 0.6 * dt);
@@ -295,6 +322,8 @@ const RC_CINEMA = (() => {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
       }
+      for (const imp of this.impacts) imp.life += dt;
+      this.impacts = this.impacts.filter(imp => imp.life < imp.maxLife);
     }
 
     _emitWeek(wk) {
@@ -303,33 +332,47 @@ const RC_CINEMA = (() => {
       // additions: from active planets toward the star. GitHub omits
       // additions/deletions for repos with >10k commits — fall back to commits.
       const addBasis = wk.additions > 0 ? Math.sqrt(wk.additions) / 4 : Math.sqrt(wk.totalCommits) * 1.5;
-      const addCount = clamp(Math.round(addBasis * 0.65), wk.totalCommits > 0 ? 1 : 0, 14);
-      const delCount = clamp(Math.round(Math.sqrt(wk.deletions) / 7), 0, 8);
+      const addCount = clamp(Math.round(addBasis * 0.78), wk.totalCommits > 0 ? 1 : 0, 16);
+      const delCount = clamp(Math.round(Math.sqrt(wk.deletions) / 8), 0, 6);
       const activeLogins = [...wk.perAuthor.keys()];
+      const peak = Math.max(1, ...m.weeks.map(w => w.totalCommits));
+      const power = 0.65 + 0.8 * Math.sqrt(clamp(wk.totalCommits / peak, 0, 1));
       for (let i = 0; i < addCount; i++) {
         const login = activeLogins[i % Math.max(1, activeLogins.length)];
         const pos = this._planetPos(login) || { x: W / 2 + 200, y: H / 2 };
-        this._spawn(pos.x, pos.y, 0);
+        this._spawn(pos.x, pos.y, 0, power);
       }
       for (let i = 0; i < delCount; i++) {
-        this._spawn(W / 2, H / 2, 1);
+        this._spawn(W / 2, H / 2, 1, 0.75);
       }
     }
 
-    _spawn(x, y, kind) {
+    _spawn(x, y, kind, power) {
       const p = this.pool.find(q => !q.alive);
       if (!p) return;
       p.alive = true;
       p.kind = kind;
       const ang = Math.random() * TAU;
-      const sp = kind === 0 ? 22 + Math.random() * 36 : 60 + Math.random() * 90;
+      const sp = kind === 0 ? 34 + Math.random() * 52 : 60 + Math.random() * 90;
       p.x = x + Math.cos(ang) * 6;
       p.y = y + Math.sin(ang) * 6;
+      p.px = p.x;
+      p.py = p.y;
       p.vx = Math.cos(ang) * sp;
       p.vy = Math.sin(ang) * sp;
       p.life = 0;
-      p.maxLife = kind === 0 ? 2.6 + Math.random() * 0.8 : 1.2 + Math.random() * 0.7;
-      p.size = kind === 0 ? 1.2 + Math.random() * 1.2 : 1.2 + Math.random() * 1.6;
+      p.maxLife = kind === 0 ? 2.35 + Math.random() * 0.7 : 1.0 + Math.random() * 0.6;
+      p.size = kind === 0 ? 0.75 + Math.random() * 0.75 : 0.75 + Math.random() * 0.9;
+      p.power = power || 1;
+    }
+
+    _impact(x, y, power, ang) {
+      this.impacts.push({
+        x, y, power: clamp(power || 1, 0.55, 1.6),
+        ang: typeof ang === 'number' ? ang : Math.random() * TAU,
+        life: 0, maxLife: 0.55
+      });
+      if (this.impacts.length > 70) this.impacts.shift();
     }
 
     _planetPos(login) {
@@ -337,6 +380,20 @@ const RC_CINEMA = (() => {
       const i = m.authors.findIndex(a => a.login === login);
       if (i < 0) return null;
       return this._orbitXY(i, m.authors.length);
+    }
+
+    _authorFade(login) {
+      if (!this.seenAuthors.has(login)) return 0;
+      const at = this.authorAppearedAt.get(login);
+      if (typeof at !== 'number') return 1;
+      return easeOut((this.t - at) / ORBIT_FADE_SEC);
+    }
+
+    _starCoreRadius() {
+      const m = this.movie;
+      if (!m) return 9;
+      const grow = Math.sqrt(clamp(this.hud.commits / Math.max(1, m.totals.commits), 0, 1));
+      return lerp(8, 38, grow);
     }
 
     _orbitXY(rank, count) {
@@ -367,15 +424,15 @@ const RC_CINEMA = (() => {
       ctx.globalAlpha = 1;
 
       if (this.phase === 'intro') {
-        this._drawScene(ctx, 0.001);
+        this._drawScene(ctx);
         this._drawIntro(ctx);
       } else if (this.phase === 'timeline' || this.phase === 'freeze') {
-        this._drawScene(ctx, 1);
+        this._drawScene(ctx);
         this._drawLetterbox(ctx);
         this._drawHUD(ctx);
         this._drawMilestone(ctx);
       } else if (this.phase === 'fade') {
-        this._drawScene(ctx, 1);
+        this._drawScene(ctx);
         ctx.fillStyle = 'rgba(0,0,0,' + clamp(this.finaleT / FADE_SEC, 0, 0.85) + ')';
         ctx.fillRect(0, 0, W, H);
       } else if (this.phase === 'poster' || this.phase === 'credits' || this.phase === 'theend' || this.phase === 'done') {
@@ -403,7 +460,7 @@ const RC_CINEMA = (() => {
       return this.movie.weeks[Math.floor(wf)] || this.movie.weeks[this.movie.weeks.length - 1];
     }
 
-    _drawScene(ctx, intensity) {
+    _drawScene(ctx) {
       const m = this.movie;
       const cx = W / 2, cy = H / 2;
       const wk = this._currentWeek();
@@ -411,60 +468,107 @@ const RC_CINEMA = (() => {
       const act = wk ? wk.totalCommits / peak : 0;
 
       // orbits
-      ctx.strokeStyle = 'rgba(139,148,158,0.075)';
-      ctx.lineWidth = 1;
       for (let i = 0; i < m.authors.length; i++) {
-        if (!this.seenAuthors.has(m.authors[i].login) && intensity >= 1) continue;
+        const fade = this._authorFade(m.authors[i].login);
+        if (fade <= 0.01) continue;
         const o = this._orbitXY(i, m.authors.length);
+        ctx.globalAlpha = 0.075 * fade;
+        ctx.strokeStyle = '#8b949e';
+        ctx.lineWidth = 1 + (1 - fade) * 0.6;
         ctx.beginPath();
         ctx.ellipse(cx, cy, o.r * 1.35, o.r * 0.78, 0, 0, TAU);
         ctx.stroke();
       }
+      ctx.globalAlpha = 1;
 
       // star (the repo) — born tiny, grows with accumulated commits,
-      // and pulses with the current week's activity
-      const grow = Math.sqrt(clamp(this.hud.commits / Math.max(1, m.totals.commits), 0, 1));
-      const baseR = lerp(9, 36, grow);
-      const pulse = baseR + act * 16 + Math.sin(this.t * 2.2) * 1.4;
+      // while commits now show as surface impacts instead of radius jumps
+      const baseR = this._starCoreRadius();
+      const coreR = baseR + Math.sin(this.t * 2.2) * 0.7;
+      const impactEnergy = clamp(this.impacts.reduce((s, imp) => {
+        return s + (1 - imp.life / imp.maxLife) * imp.power;
+      }, 0), 0, 3.5);
+      const activityGlow = Math.sqrt(clamp(act, 0, 1)) * 12;
       const colors = m.meta.langColors;
-      const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, pulse * 2.4);
+      const haloR = coreR * 2.55 + activityGlow + impactEnergy * 7;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const halo = ctx.createRadialGradient(cx, cy, coreR * 0.35, cx, cy, haloR);
+      halo.addColorStop(0, 'rgba(255,255,255,0.72)');
+      colors.forEach((c, i) => halo.addColorStop(0.18 + 0.42 * (i + 1) / (colors.length + 1), c));
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.58;
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(cx, cy, haloR, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+      const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, coreR * 1.15);
       g.addColorStop(0, '#ffffff');
-      colors.forEach((c, i) => g.addColorStop(0.18 + 0.5 * (i + 1) / (colors.length + 1), c));
-      g.addColorStop(1, 'rgba(0,0,0,0)');
+      colors.forEach((c, i) => g.addColorStop(0.22 + 0.48 * (i + 1) / (colors.length + 1), c));
+      g.addColorStop(1, '#f5c518');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(cx, cy, pulse * 2.15, 0, TAU);
+      ctx.arc(cx, cy, coreR, 0, TAU);
       ctx.fill();
+      ctx.strokeStyle = 'rgba(245,197,24,' + (0.18 + Math.min(0.26, impactEnergy * 0.06)) + ')';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR + 3 + impactEnergy * 0.6, 0, TAU);
+      ctx.stroke();
 
       // particles
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
       for (const p of this.pool) {
         if (!p.alive) continue;
         const a = 1 - p.life / p.maxLife;
-        ctx.globalAlpha = a * 0.62;
-        ctx.fillStyle = p.kind === 0 ? '#3fb950' : '#f85149';
+        const color = p.kind === 0 ? '63,185,80' : '248,81,73';
+        const tail = p.kind === 0 ? 0.075 : 0.05;
+        const tx = p.x - p.vx * tail;
+        const ty = p.y - p.vy * tail;
+        const trail = ctx.createLinearGradient(tx, ty, p.x, p.y);
+        trail.addColorStop(0, 'rgba(' + color + ',0)');
+        trail.addColorStop(1, 'rgba(' + color + ',' + (0.95 * a) + ')');
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = trail;
+        ctx.lineWidth = Math.max(0.8, p.size * 1.35);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * 1.25, 0, TAU);
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        ctx.globalAlpha = a * (p.kind === 0 ? 0.98 : 0.82);
+        ctx.shadowColor = 'rgba(' + color + ',0.95)';
+        ctx.shadowBlur = p.kind === 0 ? 10 : 7;
+        ctx.fillStyle = 'rgb(' + color + ')';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, TAU);
         ctx.fill();
       }
-      ctx.globalAlpha = 1;
+      ctx.restore();
+      this._drawImpacts(ctx);
 
       // planets (contributors)
       const maxC = Math.max(1, ...m.authors.map(a => a.totalCommits));
       for (let i = 0; i < m.authors.length; i++) {
         const a = m.authors[i];
-        const entered = this.seenAuthors.has(a.login);
-        if (!entered) continue;
+        const fade = this._authorFade(a.login);
+        if (fade <= 0.01) continue;
         const o = this._orbitXY(i, m.authors.length);
-        const size = 9 + 17 * Math.sqrt(a.totalCommits / maxC);
+        const size = (9 + 17 * Math.sqrt(a.totalCommits / maxC)) * (0.84 + 0.16 * fade);
         const activeNow = wk && wk.perAuthor.has(a.login);
+        ctx.save();
+        ctx.globalAlpha = fade;
 
         if (activeNow) { // flash halo
-          ctx.globalAlpha = 0.22 + 0.12 * Math.sin(this.t * 5);
+          ctx.globalAlpha = fade * (0.18 + 0.08 * Math.sin(this.t * 5));
           ctx.fillStyle = a.color;
           ctx.beginPath();
           ctx.arc(o.x, o.y, size + 7, 0, TAU);
           ctx.fill();
-          ctx.globalAlpha = 1;
+          ctx.globalAlpha = fade;
         }
 
         const img = this.avatars.get(a.login);
@@ -491,7 +595,48 @@ const RC_CINEMA = (() => {
           ctx.textBaseline = 'middle';
           ctx.fillText((a.login[0] || '?').toUpperCase(), o.x, o.y + 1);
         }
+        ctx.restore();
       }
+    }
+
+    _drawImpacts(ctx) {
+      if (!this.impacts.length) return;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      for (const imp of this.impacts) {
+        const t = clamp(imp.life / imp.maxLife, 0, 1);
+        const a = (1 - t) * imp.power;
+        const ringR = 4 + t * 24 * imp.power;
+        ctx.globalAlpha = clamp(a, 0, 1);
+        ctx.strokeStyle = '#f5c518';
+        ctx.lineWidth = 1.1 + (1 - t) * 1.1;
+        ctx.beginPath();
+        ctx.arc(imp.x, imp.y, ringR, 0, TAU);
+        ctx.stroke();
+
+        const flash = ctx.createRadialGradient(imp.x, imp.y, 0, imp.x, imp.y, 14 + 12 * imp.power);
+        flash.addColorStop(0, 'rgba(255,255,255,' + clamp(0.85 * a, 0, 1) + ')');
+        flash.addColorStop(0.32, 'rgba(245,197,24,' + clamp(0.72 * a, 0, 1) + ')');
+        flash.addColorStop(1, 'rgba(245,197,24,0)');
+        ctx.fillStyle = flash;
+        ctx.beginPath();
+        ctx.arc(imp.x, imp.y, 16 + 10 * imp.power, 0, TAU);
+        ctx.fill();
+
+        for (let i = 0; i < 3; i++) {
+          const ang = imp.ang + (i - 1) * 0.65 + Math.sin(imp.life * 14 + i) * 0.18;
+          const len = (9 + 18 * t) * imp.power;
+          ctx.globalAlpha = clamp(a * 0.72, 0, 0.85);
+          ctx.strokeStyle = '#ffe68a';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(imp.x, imp.y);
+          ctx.lineTo(imp.x + Math.cos(ang) * len, imp.y + Math.sin(ang) * len);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
 
     _drawIntro(ctx) {
