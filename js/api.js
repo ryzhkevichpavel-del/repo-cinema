@@ -1,11 +1,11 @@
-/* api.js — GitHub API client: exactly 4 requests per repo, sessionStorage
-   cache, 202 retry for stats endpoints, friendly errors. No dependencies. */
+/* api.js — GitHub API client: small endpoint bundle, sessionStorage cache,
+   202 retry for stats endpoints, friendly errors. No dependencies. */
 
 'use strict';
 
 const RC_API = (() => {
   const API = 'https://api.github.com';
-  const STATS_RETRIES = 5;
+  const STATS_RETRIES = 24;
   const STATS_RETRY_MS = 2500;
 
   /** Parse user input into {owner, repo} or null.
@@ -57,7 +57,7 @@ const RC_API = (() => {
     for (let i = 0; i < attempts; i++) {
       const res = await fetch(API + path, { headers: headers() });
       if (res.status === 202) {
-        if (onStatus) onStatus('projecting');
+        if (onStatus) onStatus('projecting', { attempt: i + 1, attempts });
         await sleep(STATS_RETRY_MS);
         continue;
       }
@@ -83,7 +83,7 @@ const RC_API = (() => {
     }
     throw new ApiError(
       'GitHub is still computing statistics for this repository. ' +
-      'This happens with very large repos on first request — try again in a minute.',
+      'This can take a minute or two the first time GitHub prepares a large repository — try again shortly.',
       'stats-timeout');
   }
 
@@ -100,8 +100,8 @@ const RC_API = (() => {
     catch (e) { /* quota exceeded — fine, just no cache */ }
   }
 
-  /** Fetch the full data bundle for a repo: exactly 4 API requests
-      (or 0 when cached). onStatus(text) reports cinematic progress. */
+  /** Fetch the full data bundle for a repo: normally 4 endpoint reads
+      (or 0 when cached). Contributor stats may retry while GitHub computes. */
   async function fetchRepoBundle(owner, repo, onStatus) {
     const cached = cacheGet(owner, repo);
     if (cached) {
@@ -115,22 +115,21 @@ const RC_API = (() => {
     const age = Math.max(1, Math.round(
       (Date.now() - new Date(meta.created_at)) / (365.25 * 24 * 3600 * 1000)));
     if (onStatus) onStatus('history', age);
-    const contributors = await gh(`/repos/${owner}/${repo}/stats/contributors`, onStatus, true);
+    const contributorsPromise = gh(`/repos/${owner}/${repo}/stats/contributors`, onStatus, true);
+    const languagesPromise = gh(`/repos/${owner}/${repo}/languages`, onStatus, false);
+    const commitsPromise = gh(`/repos/${owner}/${repo}/commits?per_page=100`, onStatus, false)
+      .catch(() => []);
+
+    const contributors = await contributorsPromise;
     if (!Array.isArray(contributors) || contributors.length === 0) {
       throw new ApiError('This repository has no commit history yet — nothing to film.', 'empty');
     }
 
     if (onStatus) onStatus('casting', contributors.length);
-    const languages = await gh(`/repos/${owner}/${repo}/languages`, onStatus, false);
+    const languages = await languagesPromise;
 
     if (onStatus) onStatus('credits');
-    let commits = [];
-    try {
-      commits = await gh(`/repos/${owner}/${repo}/commits?per_page=100`, onStatus, false);
-    } catch (e) {
-      // Credits are decorative; an empty-repo 409 must not kill the film.
-      commits = [];
-    }
+    const commits = await commitsPromise;
 
     const bundle = {
       meta: {

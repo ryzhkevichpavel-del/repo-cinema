@@ -32,9 +32,11 @@
 >
 > Technically it's deliberately boring: no backend, no build step, no npm
 > dependencies — vanilla JS and one Canvas 2D element on GitHub Pages. Each
-> film costs exactly 4 GitHub API calls (cached in sessionStorage), so the
-> anonymous 60 req/h limit buys ~15 films; an optional token (stored only in
-> localStorage, sent only to api.github.com) raises it to 5,000. Try the
+> film normally reads 4 GitHub API endpoints, cached in sessionStorage; if
+> GitHub is still preparing contributor stats, that one stats endpoint is
+> retried until it is ready. The anonymous 60 req/h limit buys several fresh
+> films; an optional token (stored only in localStorage, sent only to
+> api.github.com) raises it to 5,000. Try the
 > built-in react/linux/vscode demos — they play from bundled snapshots with
 > zero API calls. Feedback welcome, especially on repos that break the math.
 
@@ -49,10 +51,10 @@
 > Weekend project: paste `owner/repo`, get a ~60s animated film of the repo's
 > history with a shareable poster at the end. The whole thing is a few `<script>`
 > tags on GitHub Pages — no framework, no bundler, no node_modules. The
-> interesting constraints: GitHub's 60 req/h anonymous limit forced a strict
-> 4-requests-per-film budget, and canvas avatar images need `crossOrigin`
-> handling or PNG/video export breaks with a tainted canvas. AMA about the
-> Canvas 2D particle system (object pool, ≤400 live particles, 60 fps).
+> interesting constraints: GitHub's 60 req/h anonymous limit forced a tiny
+> request budget, and canvas avatar images need `crossOrigin` handling or
+> PNG/video export breaks with a tainted canvas. AMA about the Canvas 2D
+> particle system (object pool, ≤260 live particles, 60 fps).
 
 ### r/programming
 
@@ -67,13 +69,14 @@
 
 ### r/github
 
-**Title:** `I made a movie generator for GitHub repos — works entirely client-side with 4 API calls`
+**Title:** `I made a movie generator for GitHub repos — works entirely client-side`
 
 > Useful detail for this sub: it leans on `GET /repos/{o}/{r}/stats/contributors`,
 > which returns per-author weekly commit/addition/deletion arrays for the whole
 > history in one request — astonishingly underused endpoint. Handles the 202
-> "still computing" dance, rate-limit headers, and caches in sessionStorage so
-> replays are free. Tokens optional, never leave the browser.
+> "still computing" dance by waiting and showing progress, handles rate-limit
+> headers, and caches in sessionStorage so replays are free. Tokens optional,
+> never leave the browser.
 
 ---
 
@@ -107,15 +110,15 @@
 
 1. **Завязка.** История любого репозитория — готовый сценарий: завязка,
    новые герои, кульминация, титры. Демо-гифка фильма про linux.
-2. **Ограничения как дизайн.** 60 запросов/час без токена → бюджет ровно
-   4 запроса на фильм; почему `stats/contributors` — самый недооценённый
-   endpoint GitHub (вся история по неделям одним запросом) и как жить с его
-   `202 Accepted`.
+2. **Ограничения как дизайн.** 60 запросов/час без токена → маленький бюджет
+   на фильм: обычно 4 endpoint-запроса, но `stats/contributors` может временно
+   отвечать `202 Accepted`; почему это самый недооценённый endpoint GitHub
+   (вся история по неделям одним запросом) и как ждать готовую статистику.
 3. **Сценарий из данных.** Алгоритм майлстоунов: первый коммит, появления
    топ-5 авторов, пик активности, «великий рефакторинг» по max(deletions),
    четверти суммарных коммитов. Формула длительности фильма.
 4. **Сцена на Canvas 2D.** Звезда-репо, планеты-контрибьюторы, пул частиц
-   на 400 объектов, леттербокс, зерно плёнки за 10 строк. Почему не WebGL.
+   на 260 объектов, леттербокс, мягкое зерно плёнки. Почему не WebGL.
 5. **Грабли экспорта.** Tainted canvas и `crossOrigin="anonymous"` для
    аватарок; MediaRecorder и feature-detect mp4/webm; постер 1200×630 как
    OG-превью.

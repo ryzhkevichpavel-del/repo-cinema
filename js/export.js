@@ -5,10 +5,16 @@
 
 const RC_EXPORT = (() => {
 
-  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const fmt = (n) => typeof RC_I18N !== 'undefined'
+    ? RC_I18N.fmt(n)
+    : Math.round(n || 0).toLocaleString('en-US');
+
+  function tr(key, arg) {
+    return typeof RC_I18N !== 'undefined' ? RC_I18N.t(key, arg) : key;
+  }
 
   function starsLabel(n) {
-    if (n >= 1000) return '★ ' + (Math.round(n / 100) / 10).toLocaleString('en-US') + 'k';
+    if (n >= 1000) return tr('poster_stars_k', Math.round(n / 100) / 10);
     return '★ ' + fmt(n);
   }
 
@@ -42,7 +48,7 @@ const RC_EXPORT = (() => {
     // eyebrow
     ctx.fillStyle = '#8b949e';
     ctx.font = 'italic ' + Math.round(h * 0.032) + 'px Georgia, serif';
-    ctx.fillText('R E P O   C I N E M A   P R E S E N T S', w / 2, h * 0.18);
+    ctx.fillText(tr('poster_presents'), w / 2, h * 0.18);
 
     // title — fit width
     const name = m.fullName.toUpperCase();
@@ -61,11 +67,11 @@ const RC_EXPORT = (() => {
     // taglines
     const years = movie.meta.ageYears;
     const yearsTxt = years >= 1
-      ? Math.round(years) + ' year' + (Math.round(years) > 1 ? 's' : '') + ' in the making'
-      : Math.max(1, Math.round(years * 12)) + ' months in the making';
+      ? tr('poster_years', Math.round(years))
+      : tr('poster_months', Math.max(1, Math.round(years * 12)));
     const lines = [
-      'A film by ' + fmt(movie.totals.contributors) + ' contributors',
-      'Based on ' + fmt(movie.totals.commits) + ' true commits',
+      tr('poster_by_contributors', movie.totals.contributors),
+      tr('poster_based', movie.totals.commits),
       yearsTxt,
       starsLabel(m.stars)
     ];
@@ -82,7 +88,7 @@ const RC_EXPORT = (() => {
     if (star && !star.login.startsWith('+')) {
       ctx.fillStyle = '#8b949e';
       ctx.font = Math.round(h * 0.03) + 'px Georgia, serif';
-      ctx.fillText('Starring ' + star.login, w / 2, y + h * 0.01);
+      ctx.fillText(tr('poster_starring', star.login), w / 2, y + h * 0.01);
     }
 
     // footer URL

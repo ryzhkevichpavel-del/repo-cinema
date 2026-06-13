@@ -8,22 +8,40 @@ const RC_CINEMA = (() => {
 
   const W = 1280, H = 720;             // internal 16:9 resolution
   const LB = Math.round(H * 0.12);     // letterbox bar height
-  const MAX_PARTICLES = 400;
+  const MAX_PARTICLES = 260;
   const INTRO_SEC = 3.5;
   const FREEZE_SEC = 1.2;
   const FADE_SEC = 1.5;
   const POSTER_SEC = 4.0;
   const END_SEC = 3.0;
   const CREDIT_LINE_H = 30;
-  const CREDIT_SPEED = 130;            // px/sec
+  const CREDIT_SPEED = 96;             // px/sec
 
   const TAU = Math.PI * 2;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const lerp = (a, b, t) => a + (b - a) * t;
-  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const fmt = (n) => typeof RC_I18N !== 'undefined'
+    ? RC_I18N.fmt(n)
+    : Math.round(n || 0).toLocaleString('en-US');
 
   function monthYear(ts) {
-    return new Date(ts).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    return typeof RC_I18N !== 'undefined'
+      ? RC_I18N.monthYear(ts)
+      : new Date(ts).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  }
+
+  function tr(key, arg) {
+    return typeof RC_I18N !== 'undefined' ? RC_I18N.t(key, arg) : key;
+  }
+
+  function milestoneText(ms) {
+    if (!ms) return '';
+    if (ms.type === 'birth') return tr('film_milestone_birth', { date: monthYear(ms.date) });
+    if (ms.type === 'enter') return tr('film_milestone_enter', { login: ms.login });
+    if (ms.type === 'peak') return tr('film_milestone_peak', { commits: ms.commits });
+    if (ms.type === 'refactor') return tr('film_milestone_refactor', { lines: ms.lines });
+    if (ms.type === 'quarter') return tr('film_milestone_commit', { commits: ms.commits });
+    return '';
   }
 
   /* ---------- film grain: small noise canvas, regenerated each frame ---------- */
@@ -167,6 +185,8 @@ const RC_CINEMA = (() => {
     /** Returns the canvas frame snapshot taken at the start of the finale. */
     getPosterFrame() { return this.posterFrame; }
 
+    redraw() { this._draw(); }
+
     /* ---------------- internals ---------------- */
 
     _onPointer(e) {
@@ -283,8 +303,8 @@ const RC_CINEMA = (() => {
       // additions: from active planets toward the star. GitHub omits
       // additions/deletions for repos with >10k commits — fall back to commits.
       const addBasis = wk.additions > 0 ? Math.sqrt(wk.additions) / 4 : Math.sqrt(wk.totalCommits) * 1.5;
-      const addCount = clamp(Math.round(addBasis), wk.totalCommits > 0 ? 2 : 0, 24);
-      const delCount = clamp(Math.round(Math.sqrt(wk.deletions) / 5), 0, 14);
+      const addCount = clamp(Math.round(addBasis * 0.65), wk.totalCommits > 0 ? 1 : 0, 14);
+      const delCount = clamp(Math.round(Math.sqrt(wk.deletions) / 7), 0, 8);
       const activeLogins = [...wk.perAuthor.keys()];
       for (let i = 0; i < addCount; i++) {
         const login = activeLogins[i % Math.max(1, activeLogins.length)];
@@ -302,14 +322,14 @@ const RC_CINEMA = (() => {
       p.alive = true;
       p.kind = kind;
       const ang = Math.random() * TAU;
-      const sp = kind === 0 ? 30 + Math.random() * 50 : 90 + Math.random() * 120;
+      const sp = kind === 0 ? 22 + Math.random() * 36 : 60 + Math.random() * 90;
       p.x = x + Math.cos(ang) * 6;
       p.y = y + Math.sin(ang) * 6;
       p.vx = Math.cos(ang) * sp;
       p.vy = Math.sin(ang) * sp;
       p.life = 0;
-      p.maxLife = kind === 0 ? 2.2 + Math.random() : 1.0 + Math.random() * 0.8;
-      p.size = kind === 0 ? 1.5 + Math.random() * 1.5 : 1.5 + Math.random() * 2;
+      p.maxLife = kind === 0 ? 2.6 + Math.random() * 0.8 : 1.2 + Math.random() * 0.7;
+      p.size = kind === 0 ? 1.2 + Math.random() * 1.2 : 1.2 + Math.random() * 1.6;
     }
 
     _planetPos(login) {
@@ -365,7 +385,7 @@ const RC_CINEMA = (() => {
       // vignette
       const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85);
       vg.addColorStop(0, 'rgba(0,0,0,0)');
-      vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.35)');
       ctx.fillStyle = vg;
       ctx.fillRect(0, 0, W, H);
 
@@ -373,7 +393,7 @@ const RC_CINEMA = (() => {
       // dark radial gradients (star halo, vignette) far cheaper than
       // per-pixel ordered dithering would
       refreshGrain();
-      ctx.globalAlpha = 0.055;
+      ctx.globalAlpha = 0.012;
       ctx.drawImage(grainCanvas, 0, 0, W, H);
       ctx.globalAlpha = 1;
     }
@@ -391,7 +411,7 @@ const RC_CINEMA = (() => {
       const act = wk ? wk.totalCommits / peak : 0;
 
       // orbits
-      ctx.strokeStyle = 'rgba(139,148,158,0.12)';
+      ctx.strokeStyle = 'rgba(139,148,158,0.075)';
       ctx.lineWidth = 1;
       for (let i = 0; i < m.authors.length; i++) {
         if (!this.seenAuthors.has(m.authors[i].login) && intensity >= 1) continue;
@@ -405,7 +425,7 @@ const RC_CINEMA = (() => {
       // and pulses with the current week's activity
       const grow = Math.sqrt(clamp(this.hud.commits / Math.max(1, m.totals.commits), 0, 1));
       const baseR = lerp(9, 36, grow);
-      const pulse = baseR + act * 26 + Math.sin(this.t * 3) * 2.5;
+      const pulse = baseR + act * 16 + Math.sin(this.t * 2.2) * 1.4;
       const colors = m.meta.langColors;
       const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, pulse * 2.4);
       g.addColorStop(0, '#ffffff');
@@ -413,16 +433,18 @@ const RC_CINEMA = (() => {
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(cx, cy, pulse * 2.4, 0, TAU);
+      ctx.arc(cx, cy, pulse * 2.15, 0, TAU);
       ctx.fill();
 
       // particles
       for (const p of this.pool) {
         if (!p.alive) continue;
         const a = 1 - p.life / p.maxLife;
-        ctx.globalAlpha = a * 0.9;
+        ctx.globalAlpha = a * 0.62;
         ctx.fillStyle = p.kind === 0 ? '#3fb950' : '#f85149';
-        ctx.fillRect(p.x, p.y, p.size, p.size);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 1.25, 0, TAU);
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
 
@@ -437,7 +459,7 @@ const RC_CINEMA = (() => {
         const activeNow = wk && wk.perAuthor.has(a.login);
 
         if (activeNow) { // flash halo
-          ctx.globalAlpha = 0.35 + 0.2 * Math.sin(this.t * 8);
+          ctx.globalAlpha = 0.22 + 0.12 * Math.sin(this.t * 5);
           ctx.fillStyle = a.color;
           ctx.beginPath();
           ctx.arc(o.x, o.y, size + 7, 0, TAU);
@@ -482,13 +504,13 @@ const RC_CINEMA = (() => {
       ctx.textAlign = 'center';
       ctx.fillStyle = '#8b949e';
       ctx.font = 'italic 22px Georgia, serif';
-      ctx.fillText('REPO CINEMA presents', W / 2, H / 2 - 70);
+      ctx.fillText(tr('film_presents'), W / 2, H / 2 - 70);
       ctx.fillStyle = '#f5c518';
       ctx.font = 'bold 56px Georgia, serif';
       ctx.fillText(m.meta.fullName, W / 2, H / 2);
       ctx.fillStyle = '#e8e6e3';
       ctx.font = 'italic 20px Georgia, serif';
-      ctx.fillText('Based on ' + fmt(m.totals.commits) + ' true commits', W / 2, H / 2 + 50);
+      ctx.fillText(tr('film_based', m.totals.commits), W / 2, H / 2 + 50);
       ctx.globalAlpha = 1;
     }
 
@@ -523,15 +545,16 @@ const RC_CINEMA = (() => {
       const dt = this.t - this.milestoneShownAt;
       const DUR = 3.2;
       if (dt > DUR) { this.activeMilestone = null; return; }
+      const text = milestoneText(ms);
       // typewriter reveal then fade
-      const chars = Math.min(ms.text.length, Math.floor(dt / 0.04));
+      const chars = Math.min(text.length, Math.floor(dt / 0.04));
       const alpha = dt > DUR - 0.8 ? (DUR - dt) / 0.8 : 1;
       ctx.globalAlpha = clamp(alpha, 0, 1);
       ctx.fillStyle = '#e8e6e3';
       ctx.font = 'italic 26px Georgia, serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(ms.text.slice(0, chars), W / 2, LB / 2);
+      ctx.fillText(text.slice(0, chars), W / 2, LB / 2);
       ctx.globalAlpha = 1;
     }
 
@@ -543,12 +566,12 @@ const RC_CINEMA = (() => {
       const x = W - 24;
       let y = LB + 16;
       ctx.fillStyle = '#e8e6e3';
-      ctx.fillText(fmt(h.commits) + ' commits', x, y); y += 22;
+      ctx.fillText(tr('film_hud_commits', h.commits), x, y); y += 22;
       // count people, not planets: "+ N others" carries the weight of N
       const people = this.movie.authors.reduce(
         (s, a) => s + (this.seenAuthors.has(a.login) ? (a.count || 1) : 0), 0);
       ctx.fillStyle = '#8b949e';
-      ctx.fillText(fmt(people) + ' contributors', x, y); y += 22;
+      ctx.fillText(tr('film_hud_contributors', people), x, y); y += 22;
       if (this.movie.totals.additions > 0 || this.movie.totals.deletions > 0) {
         ctx.fillStyle = '#3fb950';
         ctx.fillText('+' + fmt(h.additions), x, y); y += 22;
@@ -568,26 +591,38 @@ const RC_CINEMA = (() => {
         RC_EXPORT.drawPoster(ctx, m, this.posterFrame, W, H);
         ctx.globalAlpha = 1;
       } else if (this.phase === 'credits') {
-        // dim poster behind credits
-        ctx.globalAlpha = 0.25;
-        RC_EXPORT.drawPoster(ctx, m, this.posterFrame, W, H);
-        ctx.globalAlpha = 1;
-        ctx.font = '18px ui-monospace, Consolas, monospace';
+        const bg = ctx.createLinearGradient(0, 0, 0, H);
+        bg.addColorStop(0, '#02040a');
+        bg.addColorStop(0.5, '#080b14');
+        bg.addColorStop(1, '#02040a');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(245,197,24,0.28)';
+        ctx.fillRect(180, 104, W - 360, 1);
+        ctx.fillRect(180, H - 82, W - 360, 1);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        let y = this.creditsY;
         ctx.fillStyle = '#f5c518';
-        ctx.font = 'italic 24px Georgia, serif';
-        ctx.fillText('— the last ' + m.credits.length + ' commits —', W / 2, y);
-        y += CREDIT_LINE_H * 2;
+        ctx.font = 'italic 28px Georgia, serif';
+        ctx.shadowColor = 'rgba(0,0,0,0.9)';
+        ctx.shadowBlur = 12;
+        ctx.fillText(tr('film_credits_title', m.credits.length), W / 2, 72);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(140, 124, W - 280, H - 226);
+        ctx.clip();
         ctx.font = '17px ui-monospace, Consolas, monospace';
-        for (const line of m.credits) {
-          if (y > -CREDIT_LINE_H && y < H + CREDIT_LINE_H) {
-            ctx.fillStyle = '#8b949e';
+        let y = this.creditsY;
+        const lines = m.credits.length ? m.credits : [tr('film_no_credits')];
+        for (const line of lines) {
+          if (y > 104 && y < H - 72) {
+            ctx.fillStyle = '#d7dee8';
             ctx.fillText(line, W / 2, y);
           }
           y += CREDIT_LINE_H;
         }
+        ctx.restore();
+        ctx.shadowBlur = 0;
       } else { // theend / done
         const a = clamp(this.finaleT / 1.0, 0, 1);
         ctx.globalAlpha = this.phase === 'done' ? 1 : a;
@@ -595,16 +630,16 @@ const RC_CINEMA = (() => {
         ctx.font = 'bold 72px Georgia, serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('THE END', W / 2, H / 2 - 20);
+        ctx.fillText(tr('film_the_end'), W / 2, H / 2 - 20);
         ctx.fillStyle = '#8b949e';
         ctx.font = 'italic 20px Georgia, serif';
-        ctx.fillText('Every repo deserves a premiere.', W / 2, H / 2 + 44);
+        ctx.fillText(tr('film_tagline'), W / 2, H / 2 + 44);
         ctx.globalAlpha = 1;
         // final HUD line: totals
         const t = m.totals;
         ctx.fillStyle = '#e8e6e3';
         ctx.font = '16px ui-monospace, Consolas, monospace';
-        let line = fmt(t.commits) + ' commits · ' + fmt(t.contributors) + ' contributors';
+        let line = tr('film_final_totals', { commits: t.commits, contributors: t.contributors });
         if (t.additions > 0 || t.deletions > 0) {
           line += ' · +' + fmt(t.additions) + ' −' + fmt(t.deletions);
         }

@@ -23,9 +23,10 @@ instantly from bundled snapshots, no API calls, no rate limit spent.
 
 - **No backend. No build. No npm.** A handful of vanilla JS files and one
   Canvas 2D element, hosted on GitHub Pages.
-- Exactly **4 GitHub API requests** per repository:
+- Normally **4 GitHub API endpoint reads** per repository:
   repo metadata, weekly contributor stats, languages, and the last 100 commit
-  messages (those become the end credits).
+  messages (those become the end credits). If GitHub is still preparing
+  contributor statistics, Repo Cinema waits and retries that one stats endpoint.
 - Responses are cached in `sessionStorage`, so replaying a repo costs **zero**
   requests.
 - The weekly history is turned into a screenplay: the repo is a **star** that
@@ -54,8 +55,9 @@ No. v1 is public-repos only, even with a token. Keep your secrets secret.
 
 **"GitHub is preparing the reels"?**
 The contributor-stats endpoint returns `202 Accepted` while GitHub computes
-statistics for repos it hasn't cached. We retry a few times; very large repos
-may need a second attempt a minute later.
+statistics for repos it hasn't cached. Repo Cinema waits for about a minute
+and shows the retry progress. Very large repos may still need a second attempt
+a minute or two later.
 
 **Why does a huge repo show "+ N others"?**
 The film stars the top-20 contributors; everyone else shares one gray planet.
@@ -69,7 +71,8 @@ There is no build step. Serve the folder with any static server:
 npx serve .        # or: python -m http.server
 ```
 
-Regenerate the demo snapshots (4 API calls each):
+Regenerate the demo snapshots (normally 4 endpoint reads each; stats may retry
+while GitHub prepares its cache):
 
 ```sh
 node tools/snapshot.mjs facebook/react   > demo/react.json

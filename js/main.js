@@ -111,6 +111,7 @@
   RC_I18N.apply();
   $('lang-toggle').addEventListener('click', () => {
     RC_I18N.setLang(RC_I18N.getLang() === 'ru' ? 'en' : 'ru');
+    if (currentMovie) cinema.redraw();
   });
 
   /* ---------- cinema controls ---------- */

@@ -29,10 +29,6 @@ const RC_TIMELINE = (() => {
   const WEEK_MS = 7 * 24 * 3600 * 1000;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-  function monthYear(ts) {
-    return new Date(ts).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  }
-
   /** Build the Movie object from an API bundle (see plan §5). */
   function buildMovie(bundle) {
     const meta = bundle.meta;
@@ -131,14 +127,14 @@ const RC_TIMELINE = (() => {
     const milestones = [];
     milestones.push({
       weekIdx: 0, type: 'birth',
-      text: 'In the beginning — ' + monthYear(weeks[0].t)
+      date: weeks[0].t
     });
 
     // First appearance of each top-5 author.
     authors.slice(0, 5).forEach(a => {
       if (a.firstWeekIdx < totalWeeks - 1 || a.totalCommits > 0) {
         if (a.firstWeekIdx > 0) {
-          milestones.push({ weekIdx: a.firstWeekIdx, type: 'enter', text: 'Enter ' + a.login });
+          milestones.push({ weekIdx: a.firstWeekIdx, type: 'enter', login: a.login });
         }
       }
     });
@@ -151,7 +147,7 @@ const RC_TIMELINE = (() => {
     if (weeks[peakIdx].totalCommits > 0) {
       milestones.push({
         weekIdx: peakIdx, type: 'peak',
-        text: 'The busiest week: ' + weeks[peakIdx].totalCommits.toLocaleString('en-US') + ' commits'
+        commits: weeks[peakIdx].totalCommits
       });
     }
 
@@ -163,7 +159,7 @@ const RC_TIMELINE = (() => {
     if (weeks[delIdx].deletions > 10000) {
       milestones.push({
         weekIdx: delIdx, type: 'refactor',
-        text: 'The great refactor: −' + weeks[delIdx].deletions.toLocaleString('en-US') + ' lines'
+        lines: weeks[delIdx].deletions
       });
     }
 
@@ -176,7 +172,7 @@ const RC_TIMELINE = (() => {
         while (ti < targets.length && cum >= totals.commits * targets[ti]) {
           milestones.push({
             weekIdx: i, type: 'quarter',
-            text: 'Commit #' + Math.round(totals.commits * targets[ti]).toLocaleString('en-US')
+            commits: Math.round(totals.commits * targets[ti])
           });
           ti++;
         }
