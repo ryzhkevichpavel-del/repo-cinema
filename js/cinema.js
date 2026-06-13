@@ -6,9 +6,9 @@
 
 const RC_CINEMA = (() => {
 
-  const W = 1280, H = 720;             // internal 16:9 resolution
+  const W = 1024, H = 576;             // internal 16:9 resolution
   const LB = Math.round(H * 0.12);     // letterbox bar height
-  const MAX_PARTICLES = 260;
+  const MAX_PARTICLES = 190;
   const INTRO_SEC = 3.5;
   const FREEZE_SEC = 1.2;
   const FADE_SEC = 1.5;
@@ -46,7 +46,7 @@ const RC_CINEMA = (() => {
     return '';
   }
 
-  /* ---------- film grain: small noise canvas, regenerated each frame ---------- */
+  /* ---------- film grain: small static noise canvas ---------- */
   const grainCanvas = document.createElement('canvas');
   grainCanvas.width = 160; grainCanvas.height = 90;
   const grainCtx = grainCanvas.getContext('2d');
@@ -60,6 +60,7 @@ const RC_CINEMA = (() => {
     }
     grainCtx.putImageData(grainData, 0, 0);
   }
+  refreshGrain();
 
   /* ---------- particle pool ---------- */
   function makePool() {
@@ -96,6 +97,9 @@ const RC_CINEMA = (() => {
 
       this.pool = makePool();
       this.avatars = new Map(); // login -> HTMLImageElement (loaded ok)
+      this.avatarSprites = new Map(); // login -> circular prerendered canvas
+      this.background = this._buildBackground();
+      this.vignette = this._buildVignette();
 
       canvas.addEventListener('pointerdown', (e) => this._onPointer(e));
     }
@@ -105,6 +109,8 @@ const RC_CINEMA = (() => {
     load(movie) {
       this.movie = movie;
       this._loadAvatars(movie);
+      this.peakCommits = Math.max(1, ...movie.weeks.map(w => w.totalCommits));
+      this.maxAuthorCommits = Math.max(1, ...movie.authors.map(a => a.totalCommits));
       // playback timeline (seconds of movie-time, before finale)
       this.timelineSec = movie.weeks.length / movie.weeksPerSecond;
       this.totalSec = INTRO_SEC + this.timelineSec; // finale length computed live
@@ -118,6 +124,7 @@ const RC_CINEMA = (() => {
       this.seenAuthors = new Set();
       this.authorAppearedAt = new Map();
       this.impacts = [];
+      this.sparkQueue = [];
       this.activeMilestone = null;
       this.milestoneShownAt = -99;
       this.shownMilestones = new Set();
@@ -189,6 +196,7 @@ const RC_CINEMA = (() => {
       this._lastWeekEmitted = wInt;
       for (const p of this.pool) p.alive = false;
       this.impacts = [];
+      this.sparkQueue = [];
       if (!this.playing) this._draw();
     }
 
@@ -219,9 +227,62 @@ const RC_CINEMA = (() => {
         if (!a.avatar || this.avatars.has(a.login)) continue;
         const img = new Image();
         img.crossOrigin = 'anonymous'; // REQUIRED: keeps canvas untainted for PNG/WebM export
-        img.onload = () => this.avatars.set(a.login, img);
+        img.onload = () => {
+          this.avatars.set(a.login, img);
+          this._cacheAvatar(a.login, img, a.color);
+        };
         img.onerror = () => { /* fallback circle with initial */ };
         img.src = a.avatar + (a.avatar.includes('?') ? '&' : '?') + 's=96';
+      }
+    }
+
+    _buildBackground() {
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#06080f';
+      ctx.fillRect(0, 0, W, H);
+      for (const s of this.stars) {
+        ctx.globalAlpha = s.a;
+        ctx.fillStyle = '#cdd6e4';
+        ctx.fillRect(s.x, s.y, s.r, s.r);
+      }
+      ctx.globalAlpha = 1;
+      return c;
+    }
+
+    _buildVignette() {
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const ctx = c.getContext('2d');
+      const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.35)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+      return c;
+    }
+
+    _cacheAvatar(login, img, color) {
+      const S = 96;
+      const c = document.createElement('canvas');
+      c.width = S; c.height = S;
+      const ctx = c.getContext('2d');
+      try {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(S / 2, S / 2, S / 2 - 3, 0, TAU);
+        ctx.clip();
+        ctx.drawImage(img, 0, 0, S, S);
+        ctx.restore();
+        ctx.strokeStyle = color || '#8b949e';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(S / 2, S / 2, S / 2 - 3, 0, TAU);
+        ctx.stroke();
+        this.avatarSprites.set(login, c);
+      } catch (e) {
+        // If an avatar cannot be safely prerendered, the normal fallback remains.
       }
     }
 
@@ -255,7 +316,7 @@ const RC_CINEMA = (() => {
               this.authorAppearedAt.set(login, this.t);
             }
           }
-          this._emitWeek(wk);
+          this._queueWeekSparks(wk);
           // milestone?
           const ms = m.milestones.find(x => x.weekIdx === this._lastWeekEmitted);
           if (ms && !this.shownMilestones.has(ms.weekIdx)) {
@@ -295,6 +356,8 @@ const RC_CINEMA = (() => {
         }
       }
 
+      this._drainSparkQueue(dt);
+
       // particles physics
       const cx = W / 2, cy = H / 2;
       for (const p of this.pool) {
@@ -326,24 +389,52 @@ const RC_CINEMA = (() => {
       this.impacts = this.impacts.filter(imp => imp.life < imp.maxLife);
     }
 
-    _emitWeek(wk) {
+    _queueWeekSparks(wk) {
       if (wk.totalCommits === 0 && wk.deletions === 0) return;
-      const m = this.movie;
       // additions: from active planets toward the star. GitHub omits
       // additions/deletions for repos with >10k commits — fall back to commits.
       const addBasis = wk.additions > 0 ? Math.sqrt(wk.additions) / 4 : Math.sqrt(wk.totalCommits) * 1.5;
-      const addCount = clamp(Math.round(addBasis * 0.78), wk.totalCommits > 0 ? 1 : 0, 16);
-      const delCount = clamp(Math.round(Math.sqrt(wk.deletions) / 8), 0, 6);
+      const addCount = clamp(Math.round(addBasis * 0.58), wk.totalCommits > 0 ? 1 : 0, 10);
+      const delCount = clamp(Math.round(Math.sqrt(wk.deletions) / 10), 0, 4);
       const activeLogins = [...wk.perAuthor.keys()];
-      const peak = Math.max(1, ...m.weeks.map(w => w.totalCommits));
-      const power = 0.65 + 0.8 * Math.sqrt(clamp(wk.totalCommits / peak, 0, 1));
-      for (let i = 0; i < addCount; i++) {
-        const login = activeLogins[i % Math.max(1, activeLogins.length)];
-        const pos = this._planetPos(login) || { x: W / 2 + 200, y: H / 2 };
-        this._spawn(pos.x, pos.y, 0, power);
+      const power = 0.65 + 0.8 * Math.sqrt(clamp(wk.totalCommits / this.peakCommits, 0, 1));
+      if (addCount > 0) {
+        this.sparkQueue.push({
+          kind: 0, count: addCount, emitted: 0, elapsed: 0,
+          duration: 0.34 + Math.min(0.28, addCount * 0.018),
+          power, logins: activeLogins
+        });
       }
-      for (let i = 0; i < delCount; i++) {
-        this._spawn(W / 2, H / 2, 1, 0.75);
+      if (delCount > 0) {
+        this.sparkQueue.push({
+          kind: 1, count: delCount, emitted: 0, elapsed: 0,
+          duration: 0.22 + delCount * 0.02,
+          power: 0.75, logins: []
+        });
+      }
+      if (this.sparkQueue.length > 18) this.sparkQueue.splice(0, this.sparkQueue.length - 18);
+    }
+
+    _drainSparkQueue(dt) {
+      if (!this.sparkQueue.length) return;
+      for (const q of this.sparkQueue) {
+        q.elapsed += dt;
+        const want = Math.min(q.count, Math.floor(q.count * clamp(q.elapsed / q.duration, 0, 1)));
+        while (q.emitted < want) {
+          this._spawnQueuedSpark(q);
+          q.emitted++;
+        }
+      }
+      this.sparkQueue = this.sparkQueue.filter(q => q.emitted < q.count);
+    }
+
+    _spawnQueuedSpark(q) {
+      if (q.kind === 0) {
+        const login = q.logins[q.emitted % Math.max(1, q.logins.length)];
+        const pos = this._planetPos(login) || { x: W / 2 + 200, y: H / 2 };
+        this._spawn(pos.x, pos.y, 0, q.power);
+      } else {
+        this._spawn(W / 2, H / 2, 1, q.power);
       }
     }
 
@@ -370,9 +461,9 @@ const RC_CINEMA = (() => {
       this.impacts.push({
         x, y, power: clamp(power || 1, 0.55, 1.6),
         ang: typeof ang === 'number' ? ang : Math.random() * TAU,
-        life: 0, maxLife: 0.55
+        life: 0, maxLife: 0.42
       });
-      if (this.impacts.length > 70) this.impacts.shift();
+      if (this.impacts.length > 30) this.impacts.shift();
     }
 
     _planetPos(login) {
@@ -411,48 +502,54 @@ const RC_CINEMA = (() => {
       const ctx = this.ctx, m = this.movie;
       if (!m) return;
 
-      // background
-      ctx.fillStyle = '#06080f';
-      ctx.fillRect(0, 0, W, H);
-
-      // stars
-      for (const s of this.stars) {
-        ctx.globalAlpha = s.a;
-        ctx.fillStyle = '#cdd6e4';
-        ctx.fillRect(s.x, s.y, s.r, s.r);
-      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
+      ctx.drawImage(this.background, 0, 0);
 
       if (this.phase === 'intro') {
-        this._drawScene(ctx);
+        this._drawSceneWithCamera(ctx);
         this._drawIntro(ctx);
       } else if (this.phase === 'timeline' || this.phase === 'freeze') {
-        this._drawScene(ctx);
+        this._drawSceneWithCamera(ctx);
         this._drawLetterbox(ctx);
         this._drawHUD(ctx);
         this._drawMilestone(ctx);
       } else if (this.phase === 'fade') {
-        this._drawScene(ctx);
+        this._drawSceneWithCamera(ctx);
         ctx.fillStyle = 'rgba(0,0,0,' + clamp(this.finaleT / FADE_SEC, 0, 0.85) + ')';
         ctx.fillRect(0, 0, W, H);
       } else if (this.phase === 'poster' || this.phase === 'credits' || this.phase === 'theend' || this.phase === 'done') {
         this._drawFinale(ctx);
       }
 
-      // vignette
-      const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85);
-      vg.addColorStop(0, 'rgba(0,0,0,0)');
-      vg.addColorStop(1, 'rgba(0,0,0,0.35)');
-      ctx.fillStyle = vg;
-      ctx.fillRect(0, 0, W, H);
-
-      // film grain — doubles as noise dithering: breaks up banding in the
-      // dark radial gradients (star halo, vignette) far cheaper than
-      // per-pixel ordered dithering would
-      refreshGrain();
-      ctx.globalAlpha = 0.012;
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(this.vignette, 0, 0);
+      ctx.globalAlpha = 0.009;
       ctx.drawImage(grainCanvas, 0, 0, W, H);
       ctx.globalAlpha = 1;
+    }
+
+    _drawSceneWithCamera(ctx) {
+      const cam = this._camera();
+      ctx.save();
+      ctx.translate(W / 2 + cam.x, H / 2 + cam.y);
+      ctx.scale(cam.z, cam.z);
+      ctx.translate(-W / 2, -H / 2);
+      this._drawScene(ctx);
+      ctx.restore();
+    }
+
+    _camera() {
+      if (this.phase !== 'timeline' && this.phase !== 'freeze') return { x: 0, y: 0, z: 1 };
+      const wk = this._currentWeek();
+      const act = wk ? Math.sqrt(clamp(wk.totalCommits / this.peakCommits, 0, 1)) : 0;
+      return {
+        x: Math.sin(this.t * 0.22) * 13 + Math.sin(this.t * 0.61) * 4,
+        y: Math.cos(this.t * 0.19) * 7,
+        z: 1 + Math.sin(this.t * 0.17) * 0.012 + act * 0.006
+      };
     }
 
     _currentWeek() {
@@ -464,8 +561,7 @@ const RC_CINEMA = (() => {
       const m = this.movie;
       const cx = W / 2, cy = H / 2;
       const wk = this._currentWeek();
-      const peak = Math.max(1, ...m.weeks.map(w => w.totalCommits));
-      const act = wk ? wk.totalCommits / peak : 0;
+      const act = wk ? wk.totalCommits / this.peakCommits : 0;
 
       // orbits
       for (let i = 0; i < m.authors.length; i++) {
@@ -529,19 +625,14 @@ const RC_CINEMA = (() => {
         const tail = p.kind === 0 ? 0.075 : 0.05;
         const tx = p.x - p.vx * tail;
         const ty = p.y - p.vy * tail;
-        const trail = ctx.createLinearGradient(tx, ty, p.x, p.y);
-        trail.addColorStop(0, 'rgba(' + color + ',0)');
-        trail.addColorStop(1, 'rgba(' + color + ',' + (0.95 * a) + ')');
         ctx.globalAlpha = 1;
-        ctx.strokeStyle = trail;
-        ctx.lineWidth = Math.max(0.8, p.size * 1.35);
+        ctx.strokeStyle = 'rgba(' + color + ',' + (0.66 * a) + ')';
+        ctx.lineWidth = Math.max(0.75, p.size * 1.15);
         ctx.beginPath();
         ctx.moveTo(tx, ty);
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
         ctx.globalAlpha = a * (p.kind === 0 ? 0.98 : 0.82);
-        ctx.shadowColor = 'rgba(' + color + ',0.95)';
-        ctx.shadowBlur = p.kind === 0 ? 10 : 7;
         ctx.fillStyle = 'rgb(' + color + ')';
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, TAU);
@@ -551,13 +642,12 @@ const RC_CINEMA = (() => {
       this._drawImpacts(ctx);
 
       // planets (contributors)
-      const maxC = Math.max(1, ...m.authors.map(a => a.totalCommits));
       for (let i = 0; i < m.authors.length; i++) {
         const a = m.authors[i];
         const fade = this._authorFade(a.login);
         if (fade <= 0.01) continue;
         const o = this._orbitXY(i, m.authors.length);
-        const size = (9 + 17 * Math.sqrt(a.totalCommits / maxC)) * (0.84 + 0.16 * fade);
+        const size = (9 + 17 * Math.sqrt(a.totalCommits / this.maxAuthorCommits)) * (0.84 + 0.16 * fade);
         const activeNow = wk && wk.perAuthor.has(a.login);
         ctx.save();
         ctx.globalAlpha = fade;
@@ -571,19 +661,17 @@ const RC_CINEMA = (() => {
           ctx.globalAlpha = fade;
         }
 
+        const sprite = this.avatarSprites.get(a.login);
         const img = this.avatars.get(a.login);
-        if (img) {
+        if (sprite) {
+          ctx.drawImage(sprite, o.x - size, o.y - size, size * 2, size * 2);
+        } else if (img) {
           ctx.save();
           ctx.beginPath();
           ctx.arc(o.x, o.y, size, 0, TAU);
           ctx.clip();
           ctx.drawImage(img, o.x - size, o.y - size, size * 2, size * 2);
           ctx.restore();
-          ctx.strokeStyle = a.color;
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.arc(o.x, o.y, size, 0, TAU);
-          ctx.stroke();
         } else {
           ctx.fillStyle = a.color;
           ctx.beginPath();
@@ -615,19 +703,16 @@ const RC_CINEMA = (() => {
         ctx.arc(imp.x, imp.y, ringR, 0, TAU);
         ctx.stroke();
 
-        const flash = ctx.createRadialGradient(imp.x, imp.y, 0, imp.x, imp.y, 14 + 12 * imp.power);
-        flash.addColorStop(0, 'rgba(255,255,255,' + clamp(0.85 * a, 0, 1) + ')');
-        flash.addColorStop(0.32, 'rgba(245,197,24,' + clamp(0.72 * a, 0, 1) + ')');
-        flash.addColorStop(1, 'rgba(245,197,24,0)');
-        ctx.fillStyle = flash;
+        ctx.globalAlpha = clamp(0.72 * a, 0, 0.9);
+        ctx.fillStyle = '#ffe68a';
         ctx.beginPath();
-        ctx.arc(imp.x, imp.y, 16 + 10 * imp.power, 0, TAU);
+        ctx.arc(imp.x, imp.y, 2.4 + 3.2 * (1 - t) * imp.power, 0, TAU);
         ctx.fill();
 
-        for (let i = 0; i < 3; i++) {
-          const ang = imp.ang + (i - 1) * 0.65 + Math.sin(imp.life * 14 + i) * 0.18;
-          const len = (9 + 18 * t) * imp.power;
-          ctx.globalAlpha = clamp(a * 0.72, 0, 0.85);
+        for (let i = 0; i < 2; i++) {
+          const ang = imp.ang + (i - 0.5) * 0.65 + Math.sin(imp.life * 14 + i) * 0.18;
+          const len = (8 + 15 * t) * imp.power;
+          ctx.globalAlpha = clamp(a * 0.58, 0, 0.76);
           ctx.strokeStyle = '#ffe68a';
           ctx.lineWidth = 1;
           ctx.beginPath();
